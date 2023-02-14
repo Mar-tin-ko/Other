@@ -1,0 +1,172 @@
+Option Explicit
+
+'**************************************************************
+' Mar-tin-ko, 2018
+' read, pre-filter, import data, create pivot table w/ filter
+'**************************************************************
+
+Sub ImportAcountData()
+
+Dim year As Integer
+Dim pre_filtering As Boolean
+Dim ws As Worksheet
+Dim file_path_1 As String
+Dim file_path_2 As String
+Dim last_row As Integer
+
+'>>>>>>>>> MANUAL INPUTS
+year = 2018
+pre_filtering = False  ' Determine if pre-filtering the data based on year variable is wanted
+file_path_1 = "C:\Users\Martin\...\file_1.csv"
+file_path_2 = "C:\Users\Martin\...\file_2.csv"
+'>>>>>>>>> END OF MANUAL INPUTS
+
+' Asign object reference of destination workbook to variable
+Set ws = ThisWorkbook.Sheets(year & "_W")
+
+' Clear the data in output file
+ws.Range(Cells(2, 1), Cells(Rows.count, 5)).ClearContents
+
+' Run the functino to copy data from input files 1 to destination file
+If pre_filtering = True Then
+    CopyData file_path_1, ws, 1, year
+Else
+    CopyData file_path_1, ws, 1
+End If
+
+' Count the last row of the destination data
+last_row = ws.Range("A1").End(xlDown).Row
+
+' Run the functino to copy data from input files 2 to destination file
+If pre_filtering = True Then
+    CopyData file_path_2, ws, last_row, year
+Else
+    CopyData file_path_2, ws, last_row
+End If
+
+
+End Sub
+
+
+Function CopyData(ByRef file_path As String, ws As Worksheet, start_point As Integer, Optional year_filter As Integer) As Range
+    Dim bank_data As Workbook
+    Dim all_rows As Integer
+    Dim num_rows As Integer
+    Dim data_range As Range
+    Dim i As Integer
+    Dim k As Integer
+    
+    Set bank_data = Workbooks.Open(file_path, Local:=True)
+    
+    ' Count all rows in original file
+    all_rows = bank_data.Sheets(1).Range("A1").End(xlDown).Row
+    
+    If year_filter = 0 Then  ' If year_filter parameter is missing
+        num_rows = all_rows
+    Else
+        ' Count rows of transactions occured in specified year
+        num_rows = 0
+        k = 0  ' Correction factor to delete the appropriate row
+        For i = 1 To all_rows
+            If Right(bank_data.Sheets(1).Range("D" & i - k), 4) = year_filter Then
+                num_rows = num_rows + 1
+            Else
+                Rows(i - k).EntireRow.Delete
+                k = k + 1
+            End If
+        Next i
+    End If
+    
+    ' Set data range
+    Set data_range = ws.Range(ws.Cells(start_point + 1, "A"), ws.Cells(start_point + num_rows, "F"))
+    
+    ' Copy values from variable to data range
+    data_range.Value = bank_data.Sheets(1).Range("A1", Cells(num_rows, "F")).Value
+
+    ' Close the file without saving the changes
+    bank_data.Close (False)
+    
+End Function
+
+
+Sub CreatePivot()
+
+Dim year As Integer
+Dim ws As Worksheet
+Dim last_row As Integer
+Dim data As Range
+Dim pt_sheet As Worksheet
+Dim pt_cache As PivotCache
+Dim pt As PivotTable
+
+'>>>>>>>>> MANUAL INPUTS
+year = 2018
+'>>>>>>>>> END OF MANUAL INPUTS
+
+' Asign object reference of destination workbook to variable
+Set ws = ThisWorkbook.Sheets(year & "_W")
+last_row = ws.Range("A1").End(xlDown).Row
+
+' Define data source
+Set data = ws.Range("A1:H" & last_row)
+
+' Create new worksheet with name "Pivot"
+Set pt_sheet = Sheets.Add
+pt_sheet.Name = "Pivot"
+
+' Create pivot cache
+Set pt_cache = ThisWorkbook.PivotCaches.Create(xlDatabase, SourceData:=data)
+
+' Create empty pivot table
+Set pt = pt_cache.CreatePivotTable(TableDestination:=pt_sheet.Cells(3, 3), TableName:="PivotTable1")
+
+' Populate pivot fields
+With pt_sheet.PivotTables("PivotTable1")
+    ' Clear data from pivot table
+    .ClearTable
+    ' Select data into rows
+    .PivotFields("Year").Orientation = xlRowField
+    .PivotFields("Month").Orientation = xlRowField
+    ' Select data into colomns
+    .PivotFields("IBAN").Orientation = xlColumnField
+    ' Select field values
+    .PivotFields("Amount").Orientation = xlDataField
+    ' Rename the table headers
+    .CompactLayoutColumnHeader = "IBAN"
+    .CompactLayoutRowHeader = "Year"
+    .PivotFields("Sum of Amount").Caption = "Account summary"
+End With
+
+
+End Sub
+
+
+Sub PivotFilter()
+
+Dim pf As PivotField
+Dim k As Integer
+Dim count As Integer
+
+' Add pivot filter
+Set pf = ThisWorkbook.Sheets("Pivot").PivotTables("PivotTable1").PivotFields("Year")
+pf.Orientation = xlPageField
+
+' Count the items of the selected field ("Year")
+count = pf.PivotItems.count
+
+' Untick the items to select the latest year
+With pf
+    For k = 1 To (count - 1)  ' At least one item must be ticked on (in this case the last one)
+        .PivotItems(k).Visible = False  ' Unticking the all items but the last one
+    Next k
+End With
+
+End Sub
+
+
+Sub ClearFilter()
+
+' Select all items (years) form the pivot's filter scroll down menu
+ThisWorkbook.Sheets("Pivot").PivotTables("PivotTable1").PivotFields("Year").ClearAllFilters
+    
+End Sub
